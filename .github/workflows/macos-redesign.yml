@@ -1,0 +1,42 @@
+name: macOS desktop build
+on:
+  push:
+    branches: [macos-redesign]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - uses: flutter-actions/setup-flutter@v4
+        with:
+          version: '3.41.9'
+          channel: stable
+      - run: rustup toolchain install --profile minimal
+      - working-directory: app
+        run: flutter pub get
+      - working-directory: packages/localsend_isolates/rust_builder/cargokit/build_tool
+        run: flutter pub get
+      - working-directory: app
+        run: flutter analyze
+      - working-directory: app
+        run: flutter test
+      - name: Build without distribution credentials
+        working-directory: app
+        run: |
+          printf 'CODE_SIGNING_ALLOWED = NO\n' > "$RUNNER_TEMP/unsigned.xcconfig"
+          XCODE_XCCONFIG_FILE="$RUNNER_TEMP/unsigned.xcconfig" flutter build macos
+      - name: Package macOS application
+        working-directory: app
+        run: |
+          app_path=$(find build/macos/Build/Products/Release -maxdepth 1 -name '*.app' -print -quit)
+          test -n "$app_path"
+          ditto -c -k --keepParent "$app_path" "$RUNNER_TEMP/LocalSend-macOS.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LocalSend-macOS
+          path: ${{ runner.temp }}/LocalSend-macOS.zip
+          if-no-files-found: error
